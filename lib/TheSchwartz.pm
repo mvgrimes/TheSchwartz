@@ -13,8 +13,8 @@ use Data::ObjectDriver::Errors;
 use Data::ObjectDriver::Driver::DBI;
 use Digest::MD5 qw( md5_hex );
 use List::Util qw( shuffle );
+use Scalar::Util qw( blessed );
 use TheSchwartz::FuncMap;
-use TheSchwartz::Job;
 use TheSchwartz::JobHandle;
 
 use constant RETRY_DEFAULT => 30;
@@ -28,6 +28,8 @@ our $T_LOST_RACE;
 ## Number of jobs to fetch at a time in find_job_for_workers.
 our $FIND_JOB_BATCH_SIZE = 50;
 
+sub job_class { 'TheSchwartz::Job' }
+
 sub new {
     my TheSchwartz $client = shift;
     my %args = @_;
@@ -36,6 +38,9 @@ sub new {
     croak "databases must be an arrayref if specified"
         unless !exists $args{databases} || ref $args{databases} eq 'ARRAY';
     my $databases = delete $args{databases};
+
+    require __PACKAGE__->job_class;
+    __PACKAGE__->job_class->import if __PACKAGE__->job_class->can('import');
 
     $client->{retry_seconds} = delete $args{retry_seconds} || RETRY_DEFAULT;
     $client->set_prioritize( delete $args{prioritize} );
@@ -60,6 +65,7 @@ sub new {
 
     return $client;
 }
+
 
 sub debug {
     my TheSchwartz $client = shift;
@@ -163,7 +169,7 @@ sub lookup_job {
     my $driver             = $client->driver_for( $handle->dsn_hashed );
 
     my $id = $handle->jobid;
-    my $job = $driver->lookup( 'TheSchwartz::Job' => $handle->jobid )
+    my $job = $driver->lookup( $client->job_class => $handle->jobid)
         or return;
 
     $job->handle($handle);
@@ -238,11 +244,11 @@ sub list_jobs {
                 );
                 $_->handle($handle);
                 $_;
-            } $driver->search( 'TheSchwartz::Job' => \%terms, \%options );
+            } $driver->search( $client->job_class => \%terms, \%options );
         }
         else {
             push @jobs,
-                $driver->search( 'TheSchwartz::Job' => \%terms, \%options );
+                $driver->search( $client->job_class => \%terms, \%options );
         }
     }
     return @jobs;
@@ -304,7 +310,7 @@ sub _find_job_with_coalescing {
             }
 
             @jobs = $driver->search(
-                'TheSchwartz::Job' => \%terms,
+                $client->job_class => \%terms,
                 \%options,
             );
         };
@@ -363,7 +369,7 @@ sub find_job_for_workers {
             }
 
             @jobs = $driver->search(
-                'TheSchwartz::Job' => \%terms,
+                $client->job_class => \%terms,
                 \%options,
             );
         };
@@ -532,11 +538,11 @@ DATABASE:
 sub insert {
     my TheSchwartz $client = shift;
     my $job = shift;
-    if ( ref( $_[0] ) eq "TheSchwartz::Job" ) {
+    if (blessed($_[0]) && $_[0]->isa("TheSchwartz::Job")) {
         croak "Can't insert multiple jobs with method 'insert'\n";
     }
-    unless ( ref($job) eq 'TheSchwartz::Job' ) {
-        $job = TheSchwartz::Job->new_from_array( $job, $_[0] );
+    unless (blessed($job) && $job->isa('TheSchwartz::Job')) {
+        $job = $client->job_class->new_from_array($job, $_[0]);
     }
 
     ## Try each of the databases that are registered with $client, in

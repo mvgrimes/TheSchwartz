@@ -5,6 +5,7 @@ use warnings;
 use Test::More tests => 19;
 
 use TheSchwartz;
+use TheSchwartz::Job;
 use Storable;
 
 # With this test, all data structures are in memory so far.  Nothing's

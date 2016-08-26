@@ -7,7 +7,6 @@ use base qw( Class::Accessor::Fast );
 __PACKAGE__->mk_accessors(qw( dsn_hashed jobid client ));
 
 use TheSchwartz::ExitStatus;
-use TheSchwartz::Job;
 
 sub new_from_string {
     my $class = shift;
